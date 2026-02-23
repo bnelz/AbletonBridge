@@ -8,6 +8,86 @@ from MCP_Server.connections.ableton import get_ableton_connection
 from MCP_Server.validation import _validate_index, _validate_range, _validate_notes
 
 
+KICK, SNARE, HIHAT, OPEN_HAT = 36, 38, 42, 46
+RIDE, CRASH, CLAP, RIM = 51, 49, 39, 37
+TOM_LO, TOM_MID, TOM_HI = 45, 47, 50
+
+DRUM_PATTERNS = {
+    "basic_rock": [
+        (KICK,    [0.0, 2.0],           1.0, 0.25),
+        (SNARE,   [1.0, 3.0],           1.0, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)], 0.7, 0.125),
+    ],
+    "house": [
+        (KICK,    [0.0, 1.0, 2.0, 3.0], 1.0, 0.25),
+        (CLAP,    [1.0, 3.0],           0.9, 0.25),
+        (OPEN_HAT,[0.5, 1.5, 2.5, 3.5], 0.6, 0.25),
+        (HIHAT,   [i * 0.25 for i in range(16)], 0.5, 0.0625),
+    ],
+    "hiphop": [
+        (KICK,    [0.0, 0.75, 2.0, 2.5], 1.0, 0.25),
+        (SNARE,   [1.0, 3.0],           1.0, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)], 0.65, 0.125),
+    ],
+    "dnb": [
+        (KICK,    [0.0, 1.75],          1.0, 0.25),
+        (SNARE,   [1.0, 3.0],           1.0, 0.25),
+        (HIHAT,   [i * 0.25 for i in range(16)], 0.6, 0.0625),
+    ],
+    "halftime": [
+        (KICK,    [0.0],                1.0, 0.25),
+        (SNARE,   [2.0],                1.0, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)], 0.6, 0.125),
+    ],
+    "jazz_ride": [
+        (RIDE,    [0.0, 0.67, 1.0, 1.67, 2.0, 2.67, 3.0, 3.67], 0.7, 0.25),
+        (KICK,    [0.0, 2.5],           0.5, 0.25),
+        (HIHAT,   [1.0, 3.0],           0.4, 0.125),
+    ],
+    "latin": [
+        (KICK,    [0.0, 1.5, 3.0],      1.0, 0.25),
+        (RIM,     [0.5, 1.0, 2.5, 3.0], 0.8, 0.125),
+        (HIHAT,   [i * 0.25 for i in range(16)], 0.5, 0.0625),
+        (OPEN_HAT,[1.5, 3.5],           0.7, 0.25),
+    ],
+    "trap": [
+        (KICK,    [0.0, 0.75, 2.0],     1.0, 0.25),
+        (SNARE,   [1.0, 3.0],           1.0, 0.25),
+        (HIHAT,   [i * 0.125 for i in range(32)], 0.55, 0.0625),
+        (OPEN_HAT,[1.75, 3.75],         0.7, 0.125),
+    ],
+}
+
+
+def _generate_drum_notes(style: str, clip_length: float = 4.0,
+                         velocity: int = 100, swing: float = 0.0) -> List[Dict[str, Any]]:
+    """Generate drum pattern notes as a list of dicts (pure logic, no Ableton connection).
+
+    Used by both the generate_drum_pattern tool and the create_drum_track workflow.
+    """
+    if style not in DRUM_PATTERNS:
+        raise ValueError(f"Unknown style '{style}'. Available: {', '.join(DRUM_PATTERNS.keys())}")
+
+    notes = []
+    swing_offset = swing * 0.08
+
+    for pitch, positions, vel_ratio, duration in DRUM_PATTERNS[style]:
+        for pos in positions:
+            if pos >= clip_length:
+                continue
+            actual_pos = pos
+            if swing > 0 and (pos * 4) % 2 == 1:
+                actual_pos += swing_offset
+            notes.append({
+                "pitch": pitch,
+                "start_time": actual_pos,
+                "duration": duration,
+                "velocity": max(1, min(127, int(velocity * vel_ratio))),
+            })
+
+    return notes
+
+
 def register_tools(mcp):
 
     @mcp.tool()
@@ -869,78 +949,7 @@ def register_tools(mcp):
         _validate_range(velocity, "velocity", 1, 127)
         _validate_range(swing, "swing", 0.0, 1.0)
 
-        KICK, SNARE, HIHAT, OPEN_HAT = 36, 38, 42, 46
-        RIDE, CRASH, CLAP, RIM = 51, 49, 39, 37
-        TOM_LO, TOM_MID, TOM_HI = 45, 47, 50
-
-        # Define patterns as (pitch, [beat positions], velocity_ratio, duration)
-        patterns = {
-            "basic_rock": [
-                (KICK,    [0.0, 2.0],           1.0, 0.25),
-                (SNARE,   [1.0, 3.0],           1.0, 0.25),
-                (HIHAT,   [i * 0.5 for i in range(8)], 0.7, 0.125),
-            ],
-            "house": [
-                (KICK,    [0.0, 1.0, 2.0, 3.0], 1.0, 0.25),
-                (CLAP,    [1.0, 3.0],           0.9, 0.25),
-                (OPEN_HAT,[0.5, 1.5, 2.5, 3.5], 0.6, 0.25),
-                (HIHAT,   [i * 0.25 for i in range(16)], 0.5, 0.0625),
-            ],
-            "hiphop": [
-                (KICK,    [0.0, 0.75, 2.0, 2.5], 1.0, 0.25),
-                (SNARE,   [1.0, 3.0],           1.0, 0.25),
-                (HIHAT,   [i * 0.5 for i in range(8)], 0.65, 0.125),
-            ],
-            "dnb": [
-                (KICK,    [0.0, 1.75],          1.0, 0.25),
-                (SNARE,   [1.0, 3.0],           1.0, 0.25),
-                (HIHAT,   [i * 0.25 for i in range(16)], 0.6, 0.0625),
-            ],
-            "halftime": [
-                (KICK,    [0.0],                1.0, 0.25),
-                (SNARE,   [2.0],                1.0, 0.25),
-                (HIHAT,   [i * 0.5 for i in range(8)], 0.6, 0.125),
-            ],
-            "jazz_ride": [
-                (RIDE,    [0.0, 0.67, 1.0, 1.67, 2.0, 2.67, 3.0, 3.67], 0.7, 0.25),
-                (KICK,    [0.0, 2.5],           0.5, 0.25),
-                (HIHAT,   [1.0, 3.0],           0.4, 0.125),
-            ],
-            "latin": [
-                (KICK,    [0.0, 1.5, 3.0],      1.0, 0.25),
-                (RIM,     [0.5, 1.0, 2.5, 3.0], 0.8, 0.125),
-                (HIHAT,   [i * 0.25 for i in range(16)], 0.5, 0.0625),
-                (OPEN_HAT,[1.5, 3.5],           0.7, 0.25),
-            ],
-            "trap": [
-                (KICK,    [0.0, 0.75, 2.0],     1.0, 0.25),
-                (SNARE,   [1.0, 3.0],           1.0, 0.25),
-                (HIHAT,   [i * 0.125 for i in range(32)], 0.55, 0.0625),
-                (OPEN_HAT,[1.75, 3.75],         0.7, 0.125),
-            ],
-        }
-
-        if style not in patterns:
-            raise ValueError(f"Unknown style '{style}'. Available: {', '.join(patterns.keys())}")
-
-        notes = []
-        swing_offset = swing * 0.08  # max 80ms-ish swing
-
-        for pitch, positions, vel_ratio, duration in patterns[style]:
-            for pos in positions:
-                if pos >= clip_length:
-                    continue
-                actual_pos = pos
-                # Apply swing to offbeat 16th notes
-                if swing > 0 and (pos * 4) % 2 == 1:
-                    actual_pos += swing_offset
-
-                notes.append({
-                    "pitch": pitch,
-                    "start_time": actual_pos,
-                    "duration": duration,
-                    "velocity": max(1, min(127, int(velocity * vel_ratio))),
-                })
+        notes = _generate_drum_notes(style, clip_length, velocity, swing)
 
         ableton = get_ableton_connection()
         ableton.send_command("add_notes_to_clip", {

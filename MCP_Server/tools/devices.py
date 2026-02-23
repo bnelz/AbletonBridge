@@ -785,58 +785,50 @@ def register_tools(mcp):
     @mcp.tool()
     @_tool_handler("setting compressor sidechain")
     def set_compressor_sidechain(ctx: Context, track_index: int, device_index: int,
-                                  input_type: str = None, input_channel: str = None) -> str:
-        """Set side-chain routing on a Compressor device by display name.
+                                  input_type: str = None, input_channel: str = None,
+                                  source_track_name: str = None, track_type: str = "track") -> str:
+        """Set side-chain routing on a Compressor device.
+
+        Two modes of operation:
+        1. By display name: provide input_type and/or input_channel (from get_compressor_sidechain output)
+        2. By track name: provide source_track_name to automatically resolve the routing
 
         Parameters:
         - track_index: The index of the track containing the Compressor
         - device_index: The index of the Compressor device on the track
-        - input_type: Side-chain source type display name (e.g. a track name, 'Ext. In'). Optional.
-        - input_channel: Side-chain source channel display name (e.g. 'Post FX', 'Pre FX'). Optional.
+        - input_type: Side-chain source type display name (e.g. 'Ext. In'). Optional.
+        - input_channel: Side-chain source channel display name (e.g. 'Post FX'). Optional.
+        - source_track_name: Name of a track to use as sidechain source (resolves automatically). Optional.
+        - track_type: Track type for source_track_name lookup: "track", "return", or "master". Default "track".
 
-        The device must be a Compressor. Use get_compressor_sidechain first to see
-        available routing options. At least one of input_type or input_channel should be provided.
+        Use get_compressor_sidechain first to see available routing options.
+        Works with Compressor, Glue Compressor, and Multiband Dynamics.
         """
         _validate_index(track_index, "track_index")
         _validate_index(device_index, "device_index")
+        ableton = get_ableton_connection()
+
+        # Mode 2: resolve by track name
+        if source_track_name:
+            result = ableton.send_command("set_sidechain_by_name", {
+                "track_index": track_index,
+                "device_index": device_index,
+                "source_track_name": source_track_name,
+                "track_type": track_type,
+            })
+            return json.dumps(result)
+
+        # Mode 1: set by display names
         params = {"track_index": track_index, "device_index": device_index}
         if input_type is not None:
             params["input_type"] = input_type
         if input_channel is not None:
             params["input_channel"] = input_channel
-        ableton = get_ableton_connection()
         result = ableton.send_command("set_compressor_sidechain", params)
         changes = [f"{k}={v}" for k, v in result.items()
                    if k not in ("track_index", "device_index", "device_name")]
         device_name = result.get("device_name", "?")
         return f"Compressor '{device_name}' sidechain updated: {', '.join(changes) if changes else 'no changes'}"
-
-    @mcp.tool()
-    @_tool_handler("setting sidechain by name")
-    def set_sidechain_by_name(ctx: Context, track_index: int, device_index: int, source_track_name: str, track_type: str = "track") -> str:
-        """Set a compressor's sidechain input to a specific track by name.
-
-        Resolves the track name to the correct routing index automatically.
-        Works with Ableton's native Compressor, Glue Compressor, and Multiband Dynamics.
-
-        Parameters:
-        - track_index: Track containing the compressor
-        - device_index: Index of the compressor device
-        - source_track_name: Name of the track to use as sidechain source
-        - track_type: "track", "return", or "master"
-        """
-        _validate_index(track_index, "track_index")
-        _validate_index(device_index, "device_index")
-        if not source_track_name:
-            raise ValueError("source_track_name is required")
-        ableton = get_ableton_connection()
-        result = ableton.send_command("set_sidechain_by_name", {
-            "track_index": track_index,
-            "device_index": device_index,
-            "source_track_name": source_track_name,
-            "track_type": track_type,
-        })
-        return json.dumps(result)
 
     # ------------------------------------------------------------------
     # EQ Eight
