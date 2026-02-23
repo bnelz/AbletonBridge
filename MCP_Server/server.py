@@ -15,6 +15,7 @@ import os
 import gzip
 import threading
 import functools
+import asyncio
 from collections import deque
 from datetime import datetime, timezone
 
@@ -133,58 +134,102 @@ class AbletonConnection:
         self._recv_buffer = ""
         return self.connect()
 
-    # Commands that modify Ableton state (need extra delays for stability)
-    _MODIFYING_COMMANDS = frozenset([
-        "create_midi_track", "create_audio_track", "set_track_name",
-        "create_clip", "add_notes_to_clip", "set_clip_name",
-        "set_tempo", "fire_clip", "stop_clip", "set_device_parameter",
-        "start_playback", "stop_playback", "load_instrument_or_effect",
-        "load_sample", "load_drum_kit",
-        "arm_track", "disarm_track", "set_arrangement_overdub",
-        "start_arrangement_recording", "stop_arrangement_recording",
-        "set_loop_start", "set_loop_end", "set_loop_length", "set_playback_position",
-        "create_scene", "delete_scene", "fire_scene", "set_scene_name",
-        "set_track_color", "set_clip_color",
-        "quantize_clip_notes", "transpose_clip_notes", "duplicate_clip",
-        "group_tracks", "set_track_volume", "set_track_pan", "set_track_mute",
-        "set_track_solo", "set_track_arm", "set_track_send",
-        "set_warp_mode", "set_clip_warp", "crop_clip", "reverse_clip",
-        "set_clip_loop_points", "set_clip_start_end", "set_clip_looping",
-        "duplicate_clip_to_arrangement", "create_clip_automation", "clear_clip_automation",
-        "create_track_automation", "clear_track_automation",
-        "delete_time", "duplicate_time", "insert_silence",
-        "delete_clip", "set_metronome", "tap_tempo", "capture_midi", "apply_groove",
-        "freeze_track", "unfreeze_track",
-        "create_return_track", "delete_track", "duplicate_track",
-        "delete_device", "set_return_track_volume", "set_return_track_pan",
-        "set_return_track_mute", "set_return_track_solo", "set_master_volume",
-        "clear_clip_notes", "add_notes_extended", "remove_notes_range",
-        "duplicate_clip_loop", "set_song_loop", "set_song_time",
-        "set_track_monitoring", "set_clip_launch_quantization", "set_clip_legato",
-        "set_drum_pad", "copy_drum_pad", "rack_variation_action",
-        "set_groove_settings", "audio_to_midi", "create_midi_track_with_simpler",
-        "sliced_simpler_to_drum_rack", "set_scene_tempo",
-        "undo", "redo", "set_track_routing", "set_clip_pitch", "set_clip_launch_mode",
+    # Tiered command delays: commands are classified by how much settling
+    # time Ableton needs after execution.
+
+    # Tier 0: No delay — instant property setters and transport toggles
+    _INSTANT_COMMANDS = frozenset([
+        "set_tempo", "set_track_name", "set_clip_name", "set_track_color",
+        "set_clip_color", "set_track_mute", "set_track_solo", "set_track_arm",
+        "set_metronome", "set_track_pan", "set_track_volume",
+        "set_return_track_volume", "set_return_track_pan", "set_master_volume",
+        "set_track_send", "set_crossfader", "set_cue_volume",
+        "start_playback", "stop_playback", "continue_playing",
+        "undo", "redo", "set_song_time", "set_song_loop",
+        "set_clip_looping", "set_device_parameter", "set_device_enabled",
+        "set_macro_value", "set_track_monitoring", "set_track_delay",
+        "set_clip_launch_mode", "set_clip_launch_quantization",
+        "set_clip_legato", "set_draw_mode", "set_follow_song",
+        "fire_clip", "stop_clip", "fire_scene", "stop_all_clips",
+        "select_scene", "select_track", "select_device", "set_detail_clip",
+        "set_clip_properties", "set_clip_follow_actions",
+        "set_scene_name", "set_scene_tempo", "set_scene_color",
+        "tap_tempo", "set_arrangement_overdub", "set_session_record",
+        "re_enable_automation", "end_undo_step",
+        "set_track_fold", "set_track_collapse",
+        "set_panning_mode", "set_split_stereo_pan",
+        "set_return_track_mute", "set_return_track_solo",
+        "set_crossfade_assign", "navigate_playback",
         "set_or_delete_cue", "jump_to_cue",
-        "set_compressor_sidechain", "set_eq8_properties", "set_hybrid_reverb_ir",
-        "set_song_settings", "trigger_session_record", "navigate_playback",
-        "select_scene", "select_track", "set_detail_clip",
-        "set_transmute_properties",
-        "set_track_fold", "set_crossfade_assign",
-        "duplicate_clip_region", "move_clip_playing_pos", "set_clip_grid",
-        "set_simpler_properties", "simpler_sample_action", "manage_sample_slices",
+        "set_song_settings", "set_playback_position",
+        "arm_track", "disarm_track",
         "preview_browser_item",
+        "set_loop_start", "set_loop_end", "set_loop_length",
     ])
+
+    # Tier 1: 50ms post-delay — note/clip/automation operations
+    _LIGHT_DELAY_COMMANDS = frozenset([
+        "add_notes_to_clip", "add_notes_extended", "remove_notes_range",
+        "clear_clip_notes", "quantize_clip_notes", "transpose_clip_notes",
+        "set_clip_loop_points", "set_clip_start_end", "set_clip_pitch",
+        "set_clip_start_time", "set_clip_grid",
+        "create_clip_automation", "clear_clip_automation",
+        "create_track_automation", "clear_track_automation",
+        "create_step_automation", "clear_clip_envelope", "clear_all_clip_envelopes",
+        "duplicate_clip", "duplicate_clip_loop", "duplicate_clip_region",
+        "crop_clip", "reverse_clip", "set_clip_warp", "set_warp_mode",
+        "move_clip_playing_pos", "duplicate_clip_slot",
+        "set_device_parameters_batch", "set_drum_pad", "copy_drum_pad",
+        "set_chain_selector", "set_chain_properties",
+        "capture_midi", "apply_groove",
+        "set_groove_settings",
+        "set_fire_button_state", "clip_scrub_native", "clip_stop_scrub",
+        "add_warp_marker", "move_warp_marker", "remove_warp_marker",
+        "set_compressor_sidechain", "set_eq8_properties",
+        "set_simpler_properties", "simpler_sample_action", "manage_sample_slices",
+        "set_transmute_properties", "set_hybrid_reverb_ir",
+        "set_track_routing", "rack_variation_action",
+        "duplicate_clip_to_arrangement",
+        "trigger_session_record",
+    ])
+
+    # Tier 2: 100ms post-delay — structural changes (create/delete tracks,
+    # scenes, devices, load instruments, freeze, etc.)
+    _HEAVY_DELAY_COMMANDS = frozenset([
+        "create_midi_track", "create_audio_track", "create_return_track",
+        "delete_track", "duplicate_track", "group_tracks",
+        "create_scene", "delete_scene",
+        "create_clip", "delete_clip",
+        "load_instrument_or_effect", "load_sample", "load_drum_kit",
+        "load_browser_item",
+        "delete_device",
+        "freeze_track", "unfreeze_track",
+        "delete_time", "duplicate_time", "insert_silence",
+        "audio_to_midi", "create_midi_track_with_simpler",
+        "sliced_simpler_to_drum_rack",
+        "start_arrangement_recording", "stop_arrangement_recording",
+    ])
+
+    def _post_delay_for(self, command_type: str) -> float:
+        """Return the post-command delay in seconds for a given command type."""
+        if command_type in self._INSTANT_COMMANDS:
+            return 0.0
+        if command_type in self._LIGHT_DELAY_COMMANDS:
+            return 0.05
+        if command_type in self._HEAVY_DELAY_COMMANDS:
+            return 0.1
+        return 0.0  # read-only / unknown commands get no delay
 
     def send_command(self, command_type: str, params: Dict[str, Any] = None, timeout: float = None) -> Dict[str, Any]:
         """Send a command to Ableton and return the response.
 
         Includes automatic retry: if the first attempt fails due to a
         socket error, the connection is reset and the command is retried once.
-        Adds small delays around modifying commands for stability.
+        Applies tiered post-command delays based on command type.
         """
         max_attempts = 2
-        is_modifying = command_type in self._MODIFYING_COMMANDS
+        post_delay = self._post_delay_for(command_type)
+        is_modifying = post_delay > 0
 
         for attempt in range(1, max_attempts + 1):
             if not self.sock and not self.connect():
@@ -201,11 +246,6 @@ class AbletonConnection:
                 # Send the command as newline-delimited JSON
                 self.sock.sendall((json.dumps(command) + '\n').encode('utf-8'))
 
-                # Add a small delay after sending modifying commands
-                # to give Ableton time to process before we read the response
-                if is_modifying:
-                    time.sleep(0.1)
-
                 # Set timeout based on command type (caller override takes priority)
                 if timeout is None:
                     timeout = 15.0 if is_modifying else 10.0
@@ -217,10 +257,9 @@ class AbletonConnection:
                     logger.error("Ableton error: %s", response.get('message'))
                     raise Exception(response.get("message", "Unknown error from Ableton"))
 
-                # Add a small delay after modifying commands complete
-                # to let Ableton settle before the next command
-                if is_modifying:
-                    time.sleep(0.1)
+                # Apply tiered post-delay to let Ableton settle
+                if post_delay > 0:
+                    time.sleep(post_delay)
 
                 return response.get("result", {})
 
@@ -889,12 +928,12 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
                     return
                 logger.info("Browser cache loaded from disk (%.0fs old, will refresh)", age)
 
-            # Step 2: Wait for Ableton, then do a live scan to refresh
-            time.sleep(5)  # let Ableton & Remote Script fully settle
-            for _ in range(20):  # poll up to 10s more for Ableton connection
-                if _ableton_connection and _ableton_connection.sock:
-                    break
-                time.sleep(0.5)
+            # Step 2: Wait for Ableton connection, then do a live scan to refresh
+            _ableton_connected_event.wait(timeout=15.0)
+            if not _ableton_connected_event.is_set():
+                logger.warning("Browser warmup: Ableton not connected after 15s, skipping")
+                return
+            time.sleep(0.5)  # brief settle after connection confirmed
             try:
                 _populate_browser_cache()
             except Exception as e:
@@ -927,6 +966,7 @@ mcp = FastMCP(
 # Global connections
 _ableton_connection = None
 _m4l_connection = None
+_ableton_connected_event = threading.Event()  # signalled on first successful connection
 
 # v1.6.0 feature stores (in-memory, lost on restart)
 _snapshot_store: Dict[str, Dict[str, Any]] = {}
@@ -1742,6 +1782,7 @@ def get_ableton_connection():
                         # Get session info as a test
                         _ableton_connection.send_command("get_session_info")
                         logger.info("Connection validated successfully")
+                        _ableton_connected_event.set()
                         return _ableton_connection
                     except Exception as e:
                         logger.error("Connection validation failed: %s", e)
@@ -2062,15 +2103,19 @@ def _reduce_automation_points(points, max_points=20, time_epsilon=0.001,
 def _tool_handler(error_prefix: str):
     """Decorator that wraps tool functions with standard error handling.
 
+    Runs the synchronous tool function in a thread pool via
+    asyncio.to_thread() so that blocking TCP/UDP I/O does not stall the
+    FastMCP async event loop.
+
     Catches ValueError -> "Invalid input: ...",
     ConnectionError -> "M4L bridge not available: ...",
     Exception -> "Error {prefix}: ..."
     """
     def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        async def wrapper(*args, **kwargs):
             try:
-                return func(*args, **kwargs)
+                return await asyncio.to_thread(func, *args, **kwargs)
             except ValueError as e:
                 return f"Invalid input: {e}"
             except ConnectionError as e:
