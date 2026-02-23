@@ -5,11 +5,15 @@ from MCP_Server.tools.creative import _generate_drum_notes, DRUM_PATTERNS
 EXPECTED_STYLES = [
     "basic_rock", "house", "hiphop", "dnb",
     "halftime", "jazz_ride", "latin", "trap",
+    "reggaeton", "funk", "disco", "bossa_nova",
+    "breakbeat", "uk_garage", "reggae", "shuffle",
+    "afrobeat", "drill",
 ]
 
-# Valid GM drum pitches used in DRUM_PATTERNS (36-51 inclusive).
+# Valid GM drum pitches used in DRUM_PATTERNS (36-56 inclusive).
+# Includes standard kit (36-51) plus tambourine (54) and cowbell (56).
 VALID_GM_DRUM_MIN = 36
-VALID_GM_DRUM_MAX = 51
+VALID_GM_DRUM_MAX = 56
 
 REQUIRED_NOTE_KEYS = {"pitch", "start_time", "duration", "velocity"}
 
@@ -19,7 +23,7 @@ REQUIRED_NOTE_KEYS = {"pitch", "start_time", "duration", "velocity"}
 # ---------------------------------------------------------------------------
 
 class TestDrumPatternsStructure:
-    def test_all_eight_styles_present(self):
+    def test_all_styles_present(self):
         assert set(DRUM_PATTERNS.keys()) == set(EXPECTED_STYLES)
 
     def test_each_pattern_is_list(self):

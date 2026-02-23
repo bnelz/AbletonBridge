@@ -11,6 +11,7 @@ from MCP_Server.validation import _validate_index, _validate_range, _validate_no
 KICK, SNARE, HIHAT, OPEN_HAT = 36, 38, 42, 46
 RIDE, CRASH, CLAP, RIM = 51, 49, 39, 37
 TOM_LO, TOM_MID, TOM_HI = 45, 47, 50
+TAMBOURINE, COWBELL = 54, 56
 
 DRUM_PATTERNS = {
     "basic_rock": [
@@ -55,6 +56,95 @@ DRUM_PATTERNS = {
         (SNARE,   [1.0, 3.0],           1.0, 0.25),
         (HIHAT,   [i * 0.125 for i in range(32)], 0.55, 0.0625),
         (OPEN_HAT,[1.75, 3.75],         0.7, 0.125),
+    ],
+    # -- Dembow rhythm: the backbone of reggaeton and modern Latin pop.
+    # Tresillo-derived kick pattern with syncopated rim clicks.
+    "reggaeton": [
+        (KICK,    [0.0, 0.75, 2.0, 2.75], 1.0, 0.25),
+        (RIM,     [0.5, 1.25, 1.5, 2.5, 3.25, 3.5], 0.85, 0.125),
+        (HIHAT,   [i * 0.5 for i in range(8)], 0.5, 0.125),
+        (OPEN_HAT,[1.0, 3.0],             0.65, 0.25),
+    ],
+    # -- Classic funk: ghost notes on the snare are the defining feature.
+    # Low-velocity "ghost" snare hits (0.3) create the pocket between
+    # the accented backbeat snare (1.0) and the syncopated kick.
+    "funk": [
+        (KICK,    [0.0, 0.75, 2.0, 2.75], 1.0, 0.25),
+        (SNARE,   [1.0, 3.0],             1.0, 0.25),
+        (SNARE,   [0.5, 1.75, 2.5, 3.5, 3.75], 0.3, 0.0625),  # ghost notes
+        (HIHAT,   [i * 0.25 for i in range(16)], 0.55, 0.0625),
+        (OPEN_HAT,[0.5, 2.5],             0.6, 0.25),
+    ],
+    # -- Disco groove: four-on-the-floor with prominent offbeat open hats.
+    # Distinct from house by its more human feel and tambourine layer.
+    "disco": [
+        (KICK,      [0.0, 1.0, 2.0, 3.0],     1.0, 0.25),
+        (SNARE,     [1.0, 3.0],                0.95, 0.25),
+        (OPEN_HAT,  [0.5, 1.5, 2.5, 3.5],     0.75, 0.25),
+        (HIHAT,     [i * 0.25 for i in range(16)], 0.45, 0.0625),
+        (TAMBOURINE,[i * 0.5 for i in range(8)], 0.4, 0.125),
+    ],
+    # -- Bossa nova: gentle Brazilian groove with the signature
+    # cross-stick partido alto pattern and syncopated kick.
+    "bossa_nova": [
+        (KICK,  [0.0, 1.5, 3.0, 3.5],         0.7, 0.25),
+        (RIM,   [0.5, 1.0, 1.5, 2.5, 3.0],    0.65, 0.125),
+        (HIHAT, [i * 0.5 for i in range(8)],   0.35, 0.125),
+    ],
+    # -- Classic breakbeat: inspired by chopped break records
+    # (Think/Amen). Off-grid snare placements and open hat accents
+    # give it a rolling, unpredictable feel.
+    "breakbeat": [
+        (KICK,    [0.0, 1.25, 2.0],       1.0, 0.25),
+        (SNARE,   [1.0, 2.75, 3.5],       1.0, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)], 0.6, 0.125),
+        (OPEN_HAT,[1.75],                  0.7, 0.25),
+    ],
+    # -- UK garage 2-step: the "skippy" groove where the kick
+    # avoids landing squarely on beats, creating a lurching feel.
+    # Sparse hi-hats with gaps define the 2-step shuffle.
+    "uk_garage": [
+        (KICK,    [0.0, 1.75, 2.75],      1.0, 0.25),
+        (SNARE,   [1.0, 3.0],             0.95, 0.25),
+        (HIHAT,   [0.25, 0.5, 1.25, 1.5, 2.25, 2.5, 3.25, 3.5], 0.55, 0.0625),
+        (OPEN_HAT,[0.75, 2.75],           0.6, 0.25),
+    ],
+    # -- Reggae one-drop: kick and snare land together on beat 3
+    # with nothing on beat 1, creating the signature "drop" feel.
+    # Rim clicks on 2 and 4 provide the skank.
+    "reggae": [
+        (KICK,  [2.0],                    1.0, 0.25),
+        (SNARE, [2.0],                    0.9, 0.25),  # layered with kick
+        (RIM,   [1.0, 3.0],               0.75, 0.125),
+        (HIHAT, [i * 0.5 for i in range(8)], 0.45, 0.125),
+    ],
+    # -- Blues shuffle: triplet-based feel (12/8 in 4/4 clothing).
+    # The "long-short" shuffle on hi-hats with a straight backbeat
+    # is the foundation of blues, boogie, and early rock and roll.
+    "shuffle": [
+        (KICK,  [0.0, 2.0],               1.0, 0.25),
+        (SNARE, [1.0, 3.0],               1.0, 0.25),
+        (HIHAT, [0.0, 0.67, 1.0, 1.67, 2.0, 2.67, 3.0, 3.67], 0.6, 0.125),
+        (OPEN_HAT,[0.67, 2.67],           0.5, 0.125),
+    ],
+    # -- Afrobeat: 12/8 bell pattern (ride) drives the groove.
+    # Sparse kick and cross-stick with tom accents create the
+    # layered polyrhythmic feel of Fela Kuti / Tony Allen.
+    "afrobeat": [
+        (RIDE,   [0.0, 1.0, 2.0, 2.67, 3.33], 0.8, 0.25),  # bell pattern
+        (KICK,   [0.0, 2.67],              1.0, 0.25),
+        (SNARE,  [1.0, 3.0],               0.7, 0.25),
+        (TOM_LO, [1.67, 3.67],             0.55, 0.25),
+        (HIHAT,  [i * 0.33 for i in range(12)], 0.4, 0.08),
+    ],
+    # -- Drill: triplet hi-hat rolls over a dark, heavy kick pattern.
+    # The contrast between stuttering hats and sparse, hard-hitting
+    # kick/clap defines UK drill and Chicago drill production.
+    "drill": [
+        (KICK,    [0.0, 0.75, 2.0],       1.0, 0.25),
+        (CLAP,    [1.0, 3.0],             1.0, 0.25),
+        (HIHAT,   [i * 0.33 for i in range(12)], 0.55, 0.08),
+        (OPEN_HAT,[1.5, 3.5],             0.7, 0.125),
     ],
 }
 
@@ -940,6 +1030,16 @@ def register_tools(mcp):
             "jazz_ride" -- jazz ride pattern
             "latin" -- Latin percussion pattern
             "trap" -- trap hi-hat pattern
+            "reggaeton" -- dembow rhythm
+            "funk" -- ghost-note funk groove
+            "disco" -- classic disco with offbeat open hats
+            "bossa_nova" -- Brazilian bossa nova
+            "breakbeat" -- classic chopped break feel
+            "uk_garage" -- 2-step shuffle groove
+            "reggae" -- one-drop reggae
+            "shuffle" -- blues shuffle (triplet feel)
+            "afrobeat" -- 12/8 bell pattern groove
+            "drill" -- triplet hi-hat drill
         - clip_length: Total clip length in beats (default: 4.0)
         - velocity: Base velocity (default: 100)
         - swing: Swing amount 0.0-1.0, shifts offbeat notes late (default: 0.0)
