@@ -23,6 +23,18 @@ NON_IDEMPOTENT_COMMANDS = frozenset([
     "add_notes_extended", "delete_return_track",
 ])
 
+# Commands that are legitimately slow and need longer timeouts than the
+# default 10s (read) / 15s (modify).
+SLOW_COMMAND_TIMEOUTS: Dict[str, float] = {
+    "load_instrument_or_effect": 30.0,
+    "load_sample": 30.0,
+    "load_drum_kit": 30.0,
+    "freeze_track": 60.0,
+    "unfreeze_track": 30.0,
+    "audio_to_midi": 30.0,
+    "get_browser_items_at_path": 20.0,
+}
+
 
 @dataclass
 class AbletonConnection:
@@ -177,7 +189,9 @@ class AbletonConnection:
 
                 # Set timeout based on command type (caller override takes priority)
                 if timeout is None:
-                    timeout = 15.0 if is_modifying else 10.0
+                    timeout = SLOW_COMMAND_TIMEOUTS.get(
+                        command_type, 15.0 if is_modifying else 10.0
+                    )
                 # Receive the response (already parsed by receive_full_response)
                 response = self.receive_full_response(self.sock, timeout=timeout)
                 logger.debug("Response status: %s", response.get('status', 'unknown'))

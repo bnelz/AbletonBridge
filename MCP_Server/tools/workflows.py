@@ -5,9 +5,10 @@ MCP tool call, reducing round-trip overhead by 3-5x for common workflows.
 """
 import json
 import logging
+import os
 from typing import List, Optional
 from mcp.server.fastmcp import Context
-from MCP_Server.tools._base import _tool_handler, _m4l_result
+from MCP_Server.tools._base import _tool_handler, _long_running_handler, _m4l_result
 from MCP_Server.connections.ableton import get_ableton_connection
 from MCP_Server.connections.m4l import get_m4l_connection
 from MCP_Server.cache.browser import resolve_device_uri
@@ -15,6 +16,37 @@ from MCP_Server.validation import _validate_index, _validate_index_allow_negativ
 import MCP_Server.state as state
 
 logger = logging.getLogger("AbletonBridge")
+
+# ---------------------------------------------------------------------------
+# Effect chain disk persistence
+# ---------------------------------------------------------------------------
+CHAIN_TEMPLATES_PATH = os.path.join(
+    os.path.expanduser("~"), ".ableton-bridge", "chain_templates.json"
+)
+
+
+def _save_chain_templates_to_disk():
+    """Persist effect chain templates to disk."""
+    with state.store_lock:
+        data = dict(state.effect_chain_store)
+    os.makedirs(os.path.dirname(CHAIN_TEMPLATES_PATH), exist_ok=True)
+    with open(CHAIN_TEMPLATES_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+    logger.info("Saved %d effect chain templates to disk", len(data))
+
+
+def load_chain_templates_from_disk():
+    """Load effect chain templates from disk into state (called on startup)."""
+    if not os.path.exists(CHAIN_TEMPLATES_PATH):
+        return
+    try:
+        with open(CHAIN_TEMPLATES_PATH) as f:
+            data = json.load(f)
+        with state.store_lock:
+            state.effect_chain_store.update(data)
+        logger.info("Loaded %d effect chain templates from disk", len(data))
+    except Exception as e:
+        logger.warning("Failed to load chain templates from disk: %s", e)
 
 
 def register_tools(mcp):
@@ -239,14 +271,17 @@ def register_tools(mcp):
         })
 
     @mcp.tool()
-    @_tool_handler("applying effect chain")
+    @_long_running_handler("applying effect chain")
     def apply_effect_chain(
         ctx: Context,
         track_index: int,
         effects: list,
         track_type: str = "track",
+        report_progress=None,
     ) -> str:
         """Load multiple effects onto a track sequentially.
+
+        Reports progress via MCP notifications so Claude can relay status.
 
         Parameters:
         - track_index: Target track index
@@ -260,8 +295,9 @@ def register_tools(mcp):
         ableton = get_ableton_connection()
         loaded = []
         failed = []
+        total = len(effects)
 
-        for effect_name in effects:
+        for i, effect_name in enumerate(effects):
             uri = resolve_device_uri(effect_name)
             try:
                 ableton.send_command("load_instrument_or_effect", {
@@ -273,6 +309,8 @@ def register_tools(mcp):
             except Exception as e:
                 failed.append({"effect": effect_name, "error": str(e)})
                 logger.warning("Failed to load effect '%s': %s", effect_name, e)
+            if report_progress:
+                report_progress(i + 1, total)
 
         return json.dumps({
             "track_index": track_index,
@@ -441,6 +479,12 @@ def register_tools(mcp):
         with state.store_lock:
             state.effect_chain_store[template_name.strip()] = template
 
+        # Persist to disk so templates survive server restarts
+        try:
+            _save_chain_templates_to_disk()
+        except Exception as e:
+            logger.warning("Failed to persist chain templates to disk: %s", e)
+
         return json.dumps({
             "template_name": template_name.strip(),
             "device_count": len(chain_data),
@@ -509,3 +553,96 @@ def register_tools(mcp):
                 })
 
         return json.dumps({"templates": templates})
+
+    @mcp.tool()
+    @_tool_handler("creating drum track")
+    def create_drum_track(
+        ctx: Context,
+        style: str = "basic_rock",
+        track_name: str = "",
+        clip_length: float = 4.0,
+        index: int = -1,
+        color_index: int = -1,
+        velocity: int = 100,
+        swing: float = 0.0,
+    ) -> str:
+        """Create a MIDI track with Drum Rack, generate a pattern, and name it — all in one call.
+
+        Combines create_midi_track + load Drum Rack + create_clip + generate_drum_pattern
+        + set_track_name into a single tool call (saves 5 round trips).
+
+        Parameters:
+        - style: Drum pattern style — "basic_rock", "house", "hiphop", "dnb",
+                 "halftime", "jazz_ride", "latin", "trap" (default "basic_rock")
+        - track_name: Optional track name (defaults to style name)
+        - clip_length: Clip length in beats (default 4.0)
+        - index: Track position (-1 = end of list)
+        - color_index: Optional color index (0-69, -1 = no change)
+        - velocity: Base velocity 1-127 (default 100)
+        - swing: Swing amount 0.0-1.0 (default 0.0)
+        """
+        _validate_index_allow_negative(index, "index", min_value=-1)
+        _validate_range(velocity, "velocity", 1, 127)
+        _validate_range(swing, "swing", 0.0, 1.0)
+        if clip_length <= 0:
+            raise ValueError("clip_length must be positive")
+
+        ableton = get_ableton_connection()
+
+        # Step 1: Create MIDI track
+        result = ableton.send_command("create_midi_track", {"index": index})
+        track_idx = result.get("index", 0)
+
+        # Step 2: Load Drum Rack
+        uri = resolve_device_uri("Drum Rack")
+        try:
+            ableton.send_command("load_instrument_or_effect", {
+                "track_index": track_idx, "uri": uri
+            })
+        except Exception as e:
+            logger.warning("Failed to load Drum Rack: %s", e)
+
+        # Step 3: Create clip
+        clip_idx = 0
+        ableton.send_command("create_clip", {
+            "track_index": track_idx,
+            "clip_index": clip_idx,
+            "length": clip_length,
+        })
+
+        # Step 4: Generate drum pattern (reuse creative.py logic via Remote Script)
+        from MCP_Server.tools.creative import _generate_drum_notes
+        notes = _generate_drum_notes(style, clip_length, velocity, swing)
+        if notes:
+            ableton.send_command("add_notes_to_clip", {
+                "track_index": track_idx,
+                "clip_index": clip_idx,
+                "notes": notes,
+            })
+
+        # Step 5: Name the track
+        name = track_name or style.replace("_", " ").title()
+        try:
+            ableton.send_command("set_track_name", {
+                "track_index": track_idx, "name": name
+            })
+        except Exception:
+            pass
+
+        # Step 6: Set color (if specified)
+        if color_index >= 0:
+            try:
+                ableton.send_command("set_track_color", {
+                    "track_index": track_idx, "color_index": color_index
+                })
+            except Exception:
+                pass
+
+        return json.dumps({
+            "track_index": track_idx,
+            "clip_index": clip_idx,
+            "style": style,
+            "name": name,
+            "clip_length": clip_length,
+            "note_count": len(notes) if notes else 0,
+        })

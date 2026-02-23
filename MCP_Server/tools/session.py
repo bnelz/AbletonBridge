@@ -144,29 +144,20 @@ def register_tools(mcp):
         return f"Playback continued from beat {result.get('position', '?')}"
 
     @mcp.tool()
-    @_tool_handler("setting song time")
-    def set_song_time(ctx: Context, time: float) -> str:
-        """
-        Set the playback position (arrangement playhead).
-
-        Parameters:
-        - time: The position in beats to jump to (0.0 = start of song)
-        """
-        ableton = get_ableton_connection()
-        ableton.send_command("set_song_time", {"time": time})
-        return f"Playhead set to beat {time}"
-
-    @mcp.tool()
     @_tool_handler("setting song loop")
-    def set_song_loop(ctx: Context, enabled: bool = None, start: float = None, length: float = None) -> str:
+    def set_song_loop(ctx: Context, enabled: bool = None, start: float = None, length: float = None, end: float = None) -> str:
         """
         Control the arrangement loop bracket.
 
         Parameters:
         - enabled: True to enable looping, False to disable (optional)
         - start: Loop start position in beats (optional)
-        - length: Loop length in beats (optional)
+        - length: Loop length in beats (optional, mutually exclusive with end)
+        - end: Loop end position in beats (optional, mutually exclusive with length).
+                If both length and end are provided, length takes priority.
         """
+        if end is not None and length is None and start is not None:
+            length = end - start
         params = {}
         if enabled is not None:
             params["enabled"] = enabled
@@ -177,10 +168,10 @@ def register_tools(mcp):
         ableton = get_ableton_connection()
         result = ableton.send_command("set_song_loop", params)
         # Use the values we sent, with result as fallback
-        state = "enabled" if (enabled if enabled is not None else result.get("loop_enabled")) else "disabled"
+        loop_state = "enabled" if (enabled if enabled is not None else result.get("loop_enabled")) else "disabled"
         s = start if start is not None else result.get('loop_start', 0)
         l = length if length is not None else result.get('loop_length', 0)
-        return f"Loop {state}: start={s}, length={l} beats"
+        return f"Loop {loop_state}: start={s}, length={l} beats"
 
     @mcp.tool()
     @_tool_handler("setting metronome")
@@ -221,42 +212,6 @@ def register_tools(mcp):
         ableton = get_ableton_connection()
         result = ableton.send_command("stop_arrangement_recording")
         return "Arrangement recording stopped"
-
-    @mcp.tool()
-    @_tool_handler("setting loop start")
-    def set_loop_start(ctx: Context, position: float) -> str:
-        """Set the loop start position in beats.
-
-        Parameters:
-        - position: The loop start position in beats
-        """
-        ableton = get_ableton_connection()
-        result = ableton.send_command("set_loop_start", {"position": position})
-        return f"Loop start set to {result.get('loop_start', position)} beats"
-
-    @mcp.tool()
-    @_tool_handler("setting loop end")
-    def set_loop_end(ctx: Context, position: float) -> str:
-        """Set the loop end position in beats.
-
-        Parameters:
-        - position: The loop end position in beats
-        """
-        ableton = get_ableton_connection()
-        result = ableton.send_command("set_loop_end", {"position": position})
-        return f"Loop end set to {result.get('loop_end', position)} beats"
-
-    @mcp.tool()
-    @_tool_handler("setting loop length")
-    def set_loop_length(ctx: Context, length: float) -> str:
-        """Set the loop length in beats (adjusts loop end relative to loop start).
-
-        Parameters:
-        - length: The loop length in beats
-        """
-        ableton = get_ableton_connection()
-        result = ableton.send_command("set_loop_length", {"length": length})
-        return f"Loop length set to {result.get('loop_length', length)} beats"
 
     @mcp.tool()
     @_tool_handler("setting playback position")
