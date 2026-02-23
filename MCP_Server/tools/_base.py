@@ -44,6 +44,61 @@ def _tool_handler(error_prefix: str):
     return decorator
 
 
+def _long_running_handler(error_prefix: str):
+    """Decorator for tools that benefit from MCP progress notifications.
+
+    Like _tool_handler, but injects a ``report_progress(current, total)``
+    callback as the second positional argument (after ``ctx``) that the tool
+    can call at meaningful checkpoints.  The callback bridges the sync thread
+    to the async event loop so ``ctx.report_progress()`` works correctly.
+
+    If the MCP client or context doesn't support progress reporting, calls to
+    ``report_progress`` are silently ignored.
+
+    Usage::
+
+        @mcp.tool()
+        @_long_running_handler("loading effects")
+        def apply_effect_chain(ctx, report_progress, effects, ...):
+            for i, fx in enumerate(effects):
+                load(fx)
+                report_progress(i + 1, len(effects))
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Build the sync-safe progress callback
+            loop = asyncio.get_running_loop()
+            ctx = args[0] if args else kwargs.get("ctx")
+
+            def report_progress(current: int, total: int):
+                if ctx is None:
+                    return
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        ctx.report_progress(current, total), loop
+                    )
+                except Exception:
+                    pass  # gracefully degrade
+
+            try:
+                result = await asyncio.to_thread(
+                    func, *args, report_progress=report_progress, **kwargs
+                )
+                if isinstance(result, str) and result.startswith("{"):
+                    return result
+                return tool_success(str(result) if result is not None else "ok")
+            except ValueError as e:
+                return tool_error(f"Invalid input: {e}")
+            except ConnectionError as e:
+                return tool_error(f"M4L bridge not available: {e}")
+            except Exception as e:
+                logger.error("Error %s: %s", error_prefix, e)
+                return tool_error(f"Error {error_prefix}: {e}")
+        return wrapper
+    return decorator
+
+
 def _m4l_result(result: dict) -> dict:
     """Extract result data from M4L response, or raise on error."""
     if result.get("status") == "success":

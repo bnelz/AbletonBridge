@@ -8,7 +8,7 @@ import logging
 import os
 from typing import List, Optional
 from mcp.server.fastmcp import Context
-from MCP_Server.tools._base import _tool_handler, _m4l_result
+from MCP_Server.tools._base import _tool_handler, _long_running_handler, _m4l_result
 from MCP_Server.connections.ableton import get_ableton_connection
 from MCP_Server.connections.m4l import get_m4l_connection
 from MCP_Server.cache.browser import resolve_device_uri
@@ -271,14 +271,17 @@ def register_tools(mcp):
         })
 
     @mcp.tool()
-    @_tool_handler("applying effect chain")
+    @_long_running_handler("applying effect chain")
     def apply_effect_chain(
         ctx: Context,
         track_index: int,
         effects: list,
         track_type: str = "track",
+        report_progress=None,
     ) -> str:
         """Load multiple effects onto a track sequentially.
+
+        Reports progress via MCP notifications so Claude can relay status.
 
         Parameters:
         - track_index: Target track index
@@ -292,8 +295,9 @@ def register_tools(mcp):
         ableton = get_ableton_connection()
         loaded = []
         failed = []
+        total = len(effects)
 
-        for effect_name in effects:
+        for i, effect_name in enumerate(effects):
             uri = resolve_device_uri(effect_name)
             try:
                 ableton.send_command("load_instrument_or_effect", {
@@ -305,6 +309,8 @@ def register_tools(mcp):
             except Exception as e:
                 failed.append({"effect": effect_name, "error": str(e)})
                 logger.warning("Failed to load effect '%s': %s", effect_name, e)
+            if report_progress:
+                report_progress(i + 1, total)
 
         return json.dumps({
             "track_index": track_index,

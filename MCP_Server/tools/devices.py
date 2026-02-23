@@ -1967,3 +1967,101 @@ def register_tools(mcp):
         ableton = get_ableton_connection()
         result = ableton.send_command("get_appointed_device", {})
         return json.dumps(result)
+
+    # ------------------------------------------------------------------
+    # Plugin info — enriched device introspection with guidance
+    # ------------------------------------------------------------------
+
+    _PLUGIN_GUIDANCE = {
+        "PluginDevice": (
+            "This is a VST2 plugin. Only the first 128 parameters are exposed "
+            "by default. To expose more, click 'Configure' in Ableton's device "
+            "header, then interact with the plugin UI to map parameters."
+        ),
+        "AuPluginDevice": (
+            "This is an Audio Unit plugin. Parameter access is similar to VST2: "
+            "only configured parameters are exposed to the scripting API. Use "
+            "Ableton's 'Configure' button to map additional parameters."
+        ),
+        "PluginDevice_vst3": (
+            "This is a VST3 plugin. VST3 plugins generally expose all their "
+            "parameters automatically, but some may require 'Configure' for "
+            "full access."
+        ),
+        "MxDeviceAudioEffect": (
+            "This is a Max for Live audio effect. Parameters are accessible "
+            "through both the standard API and the M4L bridge for hidden params."
+        ),
+        "MxDeviceInstrument": (
+            "This is a Max for Live instrument. Parameters are accessible "
+            "through both the standard API and the M4L bridge for hidden params."
+        ),
+        "MxDeviceMidiEffect": (
+            "This is a Max for Live MIDI effect. Parameters are accessible "
+            "through both the standard API and the M4L bridge for hidden params."
+        ),
+    }
+
+    @mcp.tool()
+    @_tool_handler("getting plugin info")
+    def get_plugin_info(
+        ctx: Context,
+        track_index: int,
+        device_index: int,
+        track_type: str = "track",
+    ) -> str:
+        """Get detailed plugin/device information with compatibility guidance.
+
+        Returns device class, type, parameter counts, and actionable guidance
+        for working with the device through the scripting API.
+
+        Parameters:
+        - track_index: The track containing the device
+        - device_index: The device index on the track
+        - track_type: "track", "return", or "master"
+        """
+        _validate_index(track_index, "track_index")
+        _validate_index(device_index, "device_index")
+        ableton = get_ableton_connection()
+
+        # Get basic device info
+        info = ableton.send_command("get_device_info", {
+            "track_index": track_index,
+            "device_index": device_index,
+            "track_type": track_type,
+        })
+
+        # Get parameter list
+        try:
+            params = ableton.send_command("get_device_parameters", {
+                "track_index": track_index,
+                "device_index": device_index,
+                "track_type": track_type,
+            })
+            param_count = len(params.get("parameters", []))
+        except Exception:
+            param_count = None
+
+        class_name = info.get("class_name", "")
+        is_plugin = class_name in (
+            "PluginDevice", "AuPluginDevice", "PluginDevice_vst3",
+        )
+        is_m4l = class_name.startswith("MxDevice")
+
+        result = {
+            "name": info.get("name", ""),
+            "class_name": class_name,
+            "class_display_name": info.get("class_display_name", ""),
+            "is_plugin": is_plugin,
+            "is_m4l": is_m4l,
+            "is_native": not is_plugin and not is_m4l,
+            "can_have_chains": info.get("can_have_chains", False),
+            "can_have_drum_pads": info.get("can_have_drum_pads", False),
+            "exposed_parameter_count": param_count,
+            "guidance": _PLUGIN_GUIDANCE.get(class_name, (
+                "This is a native Ableton device. All parameters are fully "
+                "accessible through the scripting API."
+            )),
+        }
+
+        return json.dumps(result)

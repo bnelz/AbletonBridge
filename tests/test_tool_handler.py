@@ -1,7 +1,8 @@
 import asyncio
 import json
 import pytest
-from MCP_Server.tools._base import _tool_handler, tool_success, tool_error, _m4l_result
+from unittest.mock import MagicMock
+from MCP_Server.tools._base import _tool_handler, _long_running_handler, tool_success, tool_error, _m4l_result
 
 
 class TestToolHandler:
@@ -82,6 +83,66 @@ class TestToolHandler:
         result = await my_tool()
         parsed = json.loads(result)
         assert parsed["status"] == "ok"
+
+
+class TestLongRunningHandler:
+    """Tests for the progress-reporting decorator."""
+
+    @pytest.mark.asyncio
+    async def test_basic_success(self):
+        @_long_running_handler("test")
+        def my_tool(ctx, report_progress=None):
+            return "done"
+
+        ctx = MagicMock()
+        result = await my_tool(ctx)
+        parsed = json.loads(result)
+        assert parsed["status"] == "ok"
+        assert parsed["message"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_json_passthrough(self):
+        @_long_running_handler("test")
+        def my_tool(ctx, report_progress=None):
+            return json.dumps({"result": 42})
+
+        ctx = MagicMock()
+        result = await my_tool(ctx)
+        parsed = json.loads(result)
+        assert parsed["result"] == 42
+
+    @pytest.mark.asyncio
+    async def test_error_handling(self):
+        @_long_running_handler("loading")
+        def my_tool(ctx, report_progress=None):
+            raise ValueError("bad")
+
+        ctx = MagicMock()
+        result = await my_tool(ctx)
+        parsed = json.loads(result)
+        assert parsed["status"] == "error"
+        assert "Invalid input" in parsed["message"]
+
+    @pytest.mark.asyncio
+    async def test_progress_callback_provided(self):
+        """The report_progress callback should be callable."""
+        progress_calls = []
+
+        @_long_running_handler("test")
+        def my_tool(ctx, report_progress=None):
+            # Report progress should be provided by the decorator
+            assert report_progress is not None
+            progress_calls.append(True)
+            return "done"
+
+        ctx = MagicMock()
+
+        async def _noop_progress(*args):
+            pass
+
+        ctx.report_progress = _noop_progress
+        await my_tool(ctx)
+        assert len(progress_calls) == 1
 
 
 class TestToolSuccess:
