@@ -7,7 +7,9 @@ EXPECTED_STYLES = [
     "halftime", "jazz_ride", "latin", "trap",
     "reggaeton", "funk", "disco", "bossa_nova",
     "breakbeat", "uk_garage", "reggae", "shuffle",
-    "afrobeat", "drill",
+    "afrobeat", "drill", "lofi_hiphop", "riddim",
+    "phonk", "techno", "jersey_club", "future_bass",
+    "amapiano",
 ]
 
 # Valid GM drum pitches used in DRUM_PATTERNS (36-56 inclusive).

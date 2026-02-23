@@ -51,11 +51,15 @@ DRUM_PATTERNS = {
         (HIHAT,   [i * 0.25 for i in range(16)], 0.5, 0.0625),
         (OPEN_HAT,[1.5, 3.5],           0.7, 0.25),
     ],
+    # -- Trap: 808-driven with rapid hi-hat patterns.
+    # Split hat layers give accented 8th notes over rapid 32nd fills.
+    # Clap on the backbeat, syncopated kick, and open hat accents.
     "trap": [
-        (KICK,    [0.0, 0.75, 2.0],     1.0, 0.25),
-        (SNARE,   [1.0, 3.0],           1.0, 0.25),
-        (HIHAT,   [i * 0.125 for i in range(32)], 0.55, 0.0625),
-        (OPEN_HAT,[1.75, 3.75],         0.7, 0.125),
+        (KICK,    [0.0, 0.75, 1.5, 2.0, 3.25],          1.0, 0.25),
+        (CLAP,    [1.0, 3.0],                            1.0, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)],           0.75, 0.0625),
+        (HIHAT,   [i * 0.125 for i in range(32) if i % 4 != 0], 0.4, 0.0625),
+        (OPEN_HAT,[0.75, 1.75, 3.75],                    0.7, 0.125),
     ],
     # -- Dembow rhythm: the backbone of reggaeton and modern Latin pop.
     # Tresillo-derived kick pattern with syncopated rim clicks.
@@ -145,6 +149,71 @@ DRUM_PATTERNS = {
         (CLAP,    [1.0, 3.0],             1.0, 0.25),
         (HIHAT,   [i * 0.33 for i in range(12)], 0.55, 0.08),
         (OPEN_HAT,[1.5, 3.5],             0.7, 0.125),
+    ],
+    # -- Lo-fi hip hop: dusty boom-bap with soft dynamics.
+    # Muted kick, cross-stick backbeat, and lazy half-time hats
+    # evoke the cassette-tape warmth of the genre.  Best with swing.
+    "lofi_hiphop": [
+        (KICK,    [0.0, 1.25, 2.5],                     0.7, 0.3),
+        (RIM,     [1.0, 3.0],                            0.55, 0.125),
+        (HIHAT,   [i * 0.5 for i in range(8)],           0.35, 0.125),
+        (OPEN_HAT,[1.75, 3.75],                          0.3, 0.25),
+    ],
+    # -- Riddim: halftime dubstep sub-genre.  Sparse, heavy, and
+    # minimal — the drums stay out of the way of the massive bass.
+    # Layered snare + clap on beat 3 for maximum punch.
+    "riddim": [
+        (KICK,    [0.0, 0.75],                           1.0, 0.25),
+        (SNARE,   [2.0],                                 1.0, 0.25),
+        (CLAP,    [2.0],                                 0.85, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)],           0.45, 0.0625),
+        (OPEN_HAT,[1.5, 3.5],                            0.6, 0.25),
+    ],
+    # -- Phonk: Memphis rap revival driven by a relentless cowbell.
+    # The cowbell pattern on 8th notes is the genre's signature,
+    # layered over syncopated kicks and rapid 16th-note hi-hats.
+    "phonk": [
+        (KICK,    [0.0, 0.75, 2.0, 2.75],               1.0, 0.25),
+        (CLAP,    [1.0, 3.0],                            1.0, 0.25),
+        (COWBELL, [i * 0.5 for i in range(8)],           0.8, 0.125),
+        (HIHAT,   [i * 0.25 for i in range(16)],         0.5, 0.0625),
+        (OPEN_HAT,[1.75, 3.75],                          0.65, 0.125),
+    ],
+    # -- Techno: driving, industrial 4/4 with offbeat hi-hats.
+    # Stripped-back and relentless — kick on every beat, clap on
+    # 2 and 4, ride for metallic tension, hats avoiding downbeats.
+    "techno": [
+        (KICK,    [0.0, 1.0, 2.0, 3.0],                 1.0, 0.25),
+        (CLAP,    [1.0, 3.0],                            0.85, 0.25),
+        (HIHAT,   [i * 0.25 for i in range(16) if i % 4 != 0], 0.55, 0.0625),
+        (RIDE,    [0.5, 1.5, 2.5, 3.5],                 0.5, 0.125),
+    ],
+    # -- Jersey club: rapid-fire syncopated kicks are the defining
+    # feature, creating the genre's frenetic, percussive energy.
+    # Sparse hats and open hat accents frame the kick bursts.
+    "jersey_club": [
+        (KICK,    [0.0, 0.25, 0.75, 1.5, 2.0, 2.25, 2.75, 3.5], 1.0, 0.125),
+        (CLAP,    [1.0, 3.0],                            0.95, 0.25),
+        (HIHAT,   [i * 0.5 for i in range(8)],           0.5, 0.0625),
+        (OPEN_HAT,[0.5, 2.5],                            0.55, 0.125),
+    ],
+    # -- Future bass: bouncy, sidechain-pumped feel with syncopated
+    # kicks and prominent offbeat open hats.  The clap on 2 and 4
+    # anchors the groove while 16th hats add shimmer.
+    "future_bass": [
+        (KICK,    [0.0, 1.75, 2.0, 3.75],               1.0, 0.25),
+        (CLAP,    [1.0, 3.0],                            0.95, 0.25),
+        (HIHAT,   [i * 0.25 for i in range(16)],         0.55, 0.0625),
+        (OPEN_HAT,[0.5, 1.5, 2.5, 3.5],                 0.65, 0.25),
+    ],
+    # -- Amapiano: South African genre with a distinctive bounce.
+    # Log-drum-style rim clicks, offbeat open hats, and a
+    # laid-back kick pattern create the signature amapiano feel.
+    "amapiano": [
+        (KICK,    [0.0, 1.5, 2.0, 3.5],                 1.0, 0.25),
+        (HIHAT,   [i * 0.25 for i in range(16)],         0.45, 0.0625),
+        (OPEN_HAT,[0.75, 2.75],                          0.55, 0.25),
+        (RIM,     [0.5, 1.0, 1.5, 2.5, 3.0, 3.5],       0.6, 0.125),
     ],
 }
 
@@ -1029,7 +1098,7 @@ def register_tools(mcp):
             "halftime" -- half-time groove
             "jazz_ride" -- jazz ride pattern
             "latin" -- Latin percussion pattern
-            "trap" -- trap hi-hat pattern
+            "trap" -- 808 trap with layered hi-hats
             "reggaeton" -- dembow rhythm
             "funk" -- ghost-note funk groove
             "disco" -- classic disco with offbeat open hats
@@ -1040,6 +1109,13 @@ def register_tools(mcp):
             "shuffle" -- blues shuffle (triplet feel)
             "afrobeat" -- 12/8 bell pattern groove
             "drill" -- triplet hi-hat drill
+            "lofi_hiphop" -- lo-fi hip hop boom-bap
+            "riddim" -- halftime riddim dubstep
+            "phonk" -- Memphis phonk with cowbell
+            "techno" -- driving techno 4/4
+            "jersey_club" -- rapid-fire jersey club kicks
+            "future_bass" -- bouncy future bass
+            "amapiano" -- South African amapiano groove
         - clip_length: Total clip length in beats (default: 4.0)
         - velocity: Base velocity (default: 100)
         - swing: Swing amount 0.0-1.0, shifts offbeat notes late (default: 0.0)
