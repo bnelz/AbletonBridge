@@ -7,6 +7,8 @@ return a deterministic URI.
 
 import asyncio
 import json
+import os
+import tempfile
 import pytest
 from unittest.mock import MagicMock, patch, call
 
@@ -715,3 +717,61 @@ class TestCreateDrumTrack:
 
         result = json.loads(result_str)
         assert result["clip_length"] == 8.0
+
+
+# ---------------------------------------------------------------------------
+# 7. Effect chain disk persistence
+# ---------------------------------------------------------------------------
+
+class TestEffectChainDiskPersistence:
+    """Tests for save/load chain templates to disk."""
+
+    def test_save_and_load_round_trip(self):
+        """Templates written to disk can be read back."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "chain_templates.json")
+            with patch.object(workflows, "CHAIN_TEMPLATES_PATH", path):
+                # Populate state
+                state.effect_chain_store["test_chain"] = {
+                    "name": "test_chain",
+                    "devices": [{"name": "EQ Eight"}],
+                    "source_track_type": "track",
+                }
+
+                # Save to disk
+                workflows._save_chain_templates_to_disk()
+                assert os.path.exists(path)
+
+                # Clear state
+                state.effect_chain_store.clear()
+                assert "test_chain" not in state.effect_chain_store
+
+                # Load from disk
+                workflows.load_chain_templates_from_disk()
+                assert "test_chain" in state.effect_chain_store
+                assert state.effect_chain_store["test_chain"]["devices"][0]["name"] == "EQ Eight"
+
+    def test_load_nonexistent_file_is_noop(self):
+        """Loading from a path that doesn't exist should do nothing."""
+        with patch.object(workflows, "CHAIN_TEMPLATES_PATH", "/nonexistent/path.json"):
+            # Should not raise
+            workflows.load_chain_templates_from_disk()
+
+    def test_save_creates_directory(self):
+        """_save_chain_templates_to_disk should create parent dirs as needed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "nested", "dir", "templates.json")
+            with patch.object(workflows, "CHAIN_TEMPLATES_PATH", path):
+                state.effect_chain_store["x"] = {"name": "x", "devices": []}
+                workflows._save_chain_templates_to_disk()
+                assert os.path.exists(path)
+
+    def test_load_corrupt_file_does_not_raise(self):
+        """A corrupt JSON file should be handled gracefully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "templates.json")
+            with open(path, "w") as f:
+                f.write("not valid json{{{")
+            with patch.object(workflows, "CHAIN_TEMPLATES_PATH", path):
+                # Should not raise, just log a warning
+                workflows.load_chain_templates_from_disk()

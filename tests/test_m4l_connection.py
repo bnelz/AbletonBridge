@@ -308,11 +308,11 @@ class TestReassembleChunkedResponse:
             ]
         )
 
-        with pytest.raises(Exception, match=r"2/3 chunks received"):
+        with pytest.raises(Exception, match=r"2/3 chunks"):
             conn._reassemble_chunked_response(first_chunk)
 
     def test_duplicate_chunk_ignored(self):
-        """A duplicate chunk index is silently overwritten (dict key), reassembly still works."""
+        """A duplicate chunk index is logged and ignored, reassembly still works."""
         payload = {"x": 123}
         full_json = json.dumps(payload, separators=(",", ":"))
         # Two chunks

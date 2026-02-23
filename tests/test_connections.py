@@ -6,7 +6,10 @@ import threading
 import pytest
 from unittest.mock import MagicMock, Mock, patch, call
 
-from MCP_Server.connections.ableton import AbletonConnection, get_ableton_connection, NON_IDEMPOTENT_COMMANDS
+from MCP_Server.connections.ableton import (
+    AbletonConnection, get_ableton_connection, NON_IDEMPOTENT_COMMANDS,
+    SLOW_COMMAND_TIMEOUTS,
+)
 from MCP_Server.constants import TIER_0_COMMANDS, TIER_1_COMMANDS, TIER_2_COMMANDS, MODIFYING_COMMANDS
 import MCP_Server.state as state
 
@@ -441,3 +444,50 @@ class TestGetAbletonConnection:
             result = get_ableton_connection()
 
         assert result is new_instance
+
+
+# ---------------------------------------------------------------------------
+# 4. SLOW_COMMAND_TIMEOUTS
+# ---------------------------------------------------------------------------
+
+class TestSlowCommandTimeouts:
+    """Verify slow-command timeouts are applied correctly."""
+
+    def test_slow_commands_have_longer_timeouts(self):
+        """All entries in SLOW_COMMAND_TIMEOUTS exceed the default 15s."""
+        for cmd, timeout in SLOW_COMMAND_TIMEOUTS.items():
+            assert timeout > 15.0, (
+                f"{cmd} timeout ({timeout}) should exceed default 15s"
+            )
+
+    def test_freeze_has_longest_timeout(self):
+        """freeze_track should have the longest timeout (60s)."""
+        assert SLOW_COMMAND_TIMEOUTS["freeze_track"] == 60.0
+
+    def test_load_instrument_timeout(self):
+        """load_instrument_or_effect should get 30s."""
+        assert SLOW_COMMAND_TIMEOUTS["load_instrument_or_effect"] == 30.0
+
+    def test_slow_timeout_applied_in_send_command(self):
+        """send_command should use SLOW_COMMAND_TIMEOUTS when no caller override."""
+        conn = AbletonConnection(host="localhost", port=9877)
+        mock_sock = MagicMock()
+        conn.sock = mock_sock
+
+        response_bytes = _make_response_bytes(_successful_response())
+        mock_sock.recv.return_value = response_bytes
+
+        with patch.object(conn, "receive_full_response", return_value=_successful_response().get("result", {})) as mock_recv:
+            mock_recv.return_value = {"status": "success", "result": {}}
+            # Monkey-patch to capture the timeout used
+            original_recv = conn.receive_full_response
+            captured_timeout = []
+
+            def capture_recv(sock, timeout=15.0):
+                captured_timeout.append(timeout)
+                return {"status": "success", "result": {}}
+
+            conn.receive_full_response = capture_recv
+            conn.send_command("load_instrument_or_effect", {"track_index": 0, "uri": "test"})
+
+            assert captured_timeout[0] == 30.0

@@ -13,22 +13,33 @@ def _tool_handler(error_prefix: str):
     Runs the synchronous tool function in a thread pool via asyncio.to_thread()
     so it doesn't block the FastMCP async event loop during TCP/UDP I/O.
 
-    Catches ValueError -> "Invalid input: ...",
-    ConnectionError -> "M4L bridge not available: ...",
-    Exception -> "Error {prefix}: ..."
+    All returns are wrapped in the standard JSON envelope:
+      Success -> tool_success(message) or tool_success(message, data)
+      ValueError -> tool_error("Invalid input: ...")
+      ConnectionError -> tool_error("M4L bridge not available: ...")
+      Exception -> tool_error("Error {prefix}: ...")
+
+    Tools that already return a JSON string (starting with '{') are passed
+    through unchanged for backwards compatibility.
     """
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             try:
-                return await asyncio.to_thread(func, *args, **kwargs)
+                result = await asyncio.to_thread(func, *args, **kwargs)
+                # If the tool already returned JSON (e.g. via tool_success or
+                # json.dumps), pass it through unchanged.
+                if isinstance(result, str) and result.startswith("{"):
+                    return result
+                # Wrap plain string results in the standard envelope.
+                return tool_success(str(result) if result is not None else "ok")
             except ValueError as e:
-                return f"Invalid input: {e}"
+                return tool_error(f"Invalid input: {e}")
             except ConnectionError as e:
-                return f"M4L bridge not available: {e}"
+                return tool_error(f"M4L bridge not available: {e}")
             except Exception as e:
                 logger.error("Error %s: %s", error_prefix, e)
-                return f"Error {error_prefix}: {e}"
+                return tool_error(f"Error {error_prefix}: {e}")
         return wrapper
     return decorator
 

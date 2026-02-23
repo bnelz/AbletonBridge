@@ -5,6 +5,7 @@ MCP tool call, reducing round-trip overhead by 3-5x for common workflows.
 """
 import json
 import logging
+import os
 from typing import List, Optional
 from mcp.server.fastmcp import Context
 from MCP_Server.tools._base import _tool_handler, _m4l_result
@@ -15,6 +16,37 @@ from MCP_Server.validation import _validate_index, _validate_index_allow_negativ
 import MCP_Server.state as state
 
 logger = logging.getLogger("AbletonBridge")
+
+# ---------------------------------------------------------------------------
+# Effect chain disk persistence
+# ---------------------------------------------------------------------------
+CHAIN_TEMPLATES_PATH = os.path.join(
+    os.path.expanduser("~"), ".ableton-bridge", "chain_templates.json"
+)
+
+
+def _save_chain_templates_to_disk():
+    """Persist effect chain templates to disk."""
+    with state.store_lock:
+        data = dict(state.effect_chain_store)
+    os.makedirs(os.path.dirname(CHAIN_TEMPLATES_PATH), exist_ok=True)
+    with open(CHAIN_TEMPLATES_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+    logger.info("Saved %d effect chain templates to disk", len(data))
+
+
+def load_chain_templates_from_disk():
+    """Load effect chain templates from disk into state (called on startup)."""
+    if not os.path.exists(CHAIN_TEMPLATES_PATH):
+        return
+    try:
+        with open(CHAIN_TEMPLATES_PATH) as f:
+            data = json.load(f)
+        with state.store_lock:
+            state.effect_chain_store.update(data)
+        logger.info("Loaded %d effect chain templates from disk", len(data))
+    except Exception as e:
+        logger.warning("Failed to load chain templates from disk: %s", e)
 
 
 def register_tools(mcp):
@@ -440,6 +472,12 @@ def register_tools(mcp):
 
         with state.store_lock:
             state.effect_chain_store[template_name.strip()] = template
+
+        # Persist to disk so templates survive server restarts
+        try:
+            _save_chain_templates_to_disk()
+        except Exception as e:
+            logger.warning("Failed to persist chain templates to disk: %s", e)
 
         return json.dumps({
             "template_name": template_name.strip(),
